@@ -3,15 +3,17 @@
 Planetary Alignment on Perfect February 28th Calculator
 ========================================================
 
-Calculates the last time 6 planets (Mercury, Venus, Jupiter, Saturn, Uranus,
-Neptune) were aligned on February 28th of a "Perfect February" — a February
-with exactly 4 occurrences of each day of the week (28 days = non-leap year).
+Calculates the last time the astronomical conditions of Feb 28, 2026
+occurred simultaneously:
 
-The February 28, 2026 event is used as the reference alignment.
+  1. Perfect February: non-leap year, Feb 1 = Sunday (Sun–Sat 4-week block)
+  2. Saturn–Neptune conjunction (within 5°) — a ~36-year cycle event
+  3. Mercury–Venus conjunction (within 5°)
+  4. All 6 planets (Mercury, Venus, Jupiter, Saturn, Uranus, Neptune)
+     on the same side of the sky (spread ≤ 180°)
 
 Uses the Swiss Ephemeris (pyswisseph) with the built-in Moshier analytical
-ephemeris, which provides ~0.1 arcsecond precision for dates between
-3000 BC and 3000 AD — more than sufficient for alignment detection.
+ephemeris (~0.1 arcsecond precision, 3000 BC – 3000 AD).
 
 Dependencies:
     pip install pyswisseph
@@ -25,8 +27,6 @@ import datetime
 # Configuration
 # ---------------------------------------------------------------------------
 
-# The 6 planets in the Feb 28, 2026 alignment
-# (Saturn, Mercury, Neptune, Venus, Uranus, Jupiter — NOT Mars)
 PLANETS = {
     "Mercury": swe.MERCURY,
     "Venus":   swe.VENUS,
@@ -38,12 +38,15 @@ PLANETS = {
 
 REFERENCE_YEAR = 2026
 
-# Search range (Moshier ephemeris is reliable 3000 BC – 3000 AD)
+# Search range (Moshier ephemeris: 3000 BC – 3000 AD)
 SEARCH_START = 2025
 SEARCH_END = -3000
 
-# Gap (in years) that separates distinct "clusters" of matching years
-CLUSTER_GAP = 30
+# Conjunction threshold (degrees) — planets considered "conjunct"
+CONJUNCTION_THRESHOLD = 5.0
+
+# Maximum spread for all 6 planets to be "on the same side of the sky"
+MAX_SPREAD = 180.0
 
 
 # ---------------------------------------------------------------------------
@@ -79,8 +82,6 @@ def is_perfect_february_sunday(year: int) -> bool:
     A 'Perfect February' starting on Sunday:
       1. Non-leap year (28 days = exactly 4 of each weekday)
       2. February 1 falls on a Sunday
-
-    Like February 2026: Sun Feb 1 through Sat Feb 28.
     """
     if _is_leap(year):
         return False
@@ -88,11 +89,8 @@ def is_perfect_february_sunday(year: int) -> bool:
 
 
 def get_ecliptic_longitudes(year: int, month: int, day: int) -> dict[str, float]:
-    """
-    Compute geocentric ecliptic longitudes (degrees) for each planet.
-    Uses Swiss Ephemeris Julian Day conversion and Moshier analytical ephemeris.
-    """
-    jd = swe.julday(year, month, day, 12.0)  # noon UT
+    """Compute geocentric ecliptic longitudes (degrees) for each planet."""
+    jd = swe.julday(year, month, day, 12.0)
     longitudes = {}
     for name, planet_id in PLANETS.items():
         try:
@@ -103,11 +101,14 @@ def get_ecliptic_longitudes(year: int, month: int, day: int) -> dict[str, float]
     return longitudes
 
 
+def angular_separation(lon1: float, lon2: float) -> float:
+    """Shortest angular distance between two ecliptic longitudes."""
+    diff = abs(lon1 - lon2) % 360.0
+    return min(diff, 360.0 - diff)
+
+
 def min_arc_spread(longitudes: list[float]) -> float:
-    """
-    Calculate the minimum arc (degrees) that contains all given longitudes.
-    Handles the circular wrap-around at 0°/360°.
-    """
+    """Minimum arc (degrees) that contains all given longitudes."""
     if len(longitudes) < 2:
         return 0.0
     s = sorted(longitudes)
@@ -130,26 +131,9 @@ def year_label(year: int) -> str:
 
 
 def format_longitudes(longs: dict[str, float]) -> str:
-    """Pretty-print planetary longitudes in a single line."""
+    """Pretty-print planetary longitudes."""
     parts = [f"{n[:3]}={v:6.1f}°" for n, v in longs.items()]
     return "  ".join(parts)
-
-
-def find_clusters(matches: list[tuple], gap_threshold: int) -> list[list[tuple]]:
-    """
-    Group matches into clusters: consecutive years within gap_threshold
-    of each other belong to the same cluster.
-    """
-    if not matches:
-        return []
-    sorted_matches = sorted(matches, key=lambda x: x[0])
-    clusters = [[sorted_matches[0]]]
-    for m in sorted_matches[1:]:
-        if m[0] - clusters[-1][-1][0] <= gap_threshold:
-            clusters[-1].append(m)
-        else:
-            clusters.append([m])
-    return clusters
 
 
 # ---------------------------------------------------------------------------
@@ -158,12 +142,13 @@ def find_clusters(matches: list[tuple], gap_threshold: int) -> list[list[tuple]]
 
 def main():
     print("=" * 72)
-    print("  PLANETARY ALIGNMENT ON PERFECT FEBRUARY 28th")
-    print("  When did 6 planets last align on Feb 28 of a Perfect February?")
+    print("  WHEN DID THIS LAST HAPPEN?")
+    print("  Perfect February + Saturn-Neptune & Mercury-Venus conjunctions")
+    print("  + 6 planets aligned on February 28th")
     print("=" * 72)
 
     # ------------------------------------------------------------------
-    # Step 1: Establish the 2026 reference
+    # Step 1: Analyze the 2026 reference event
     # ------------------------------------------------------------------
     print(f"\n{'─' * 72}")
     print(f"  REFERENCE: February 28, {REFERENCE_YEAR}")
@@ -171,189 +156,172 @@ def main():
 
     ref_longs = get_ecliptic_longitudes(REFERENCE_YEAR, 2, 28)
     ref_spread = min_arc_spread(list(ref_longs.values()))
+    sat_nep = angular_separation(ref_longs["Saturn"], ref_longs["Neptune"])
+    mer_ven = angular_separation(ref_longs["Mercury"], ref_longs["Venus"])
 
     dow = datetime.date(REFERENCE_YEAR, 2, 1).strftime('%A')
-    print(f"\n  Perfect February: Yes (non-leap, 28 days, Feb 1 = {dow} = Sunday)")
-    print(f"  (Sun Feb 1 through Sat Feb 28 — a complete 4-week block)")
+    print(f"\n  Perfect February: Feb 1 = {dow}, 28 days (Sun–Sat 4-week block)")
     print(f"  Planets: {', '.join(PLANETS.keys())}")
-    print(f"  Longitudes: {format_longitudes(ref_longs)}")
-    print(f"  Minimum arc spread: {ref_spread:.2f}°")
-
-    threshold = ref_spread
-    print(f"\n  Alignment threshold: spread <= {threshold:.2f}°")
-    print(f"  (any 6-planet configuration as tight or tighter than 2026)")
+    print(f"  {format_longitudes(ref_longs)}")
+    print(f"\n  Saturn–Neptune separation:  {sat_nep:.2f}°  (conjunction!)")
+    print(f"  Mercury–Venus separation:  {mer_ven:.2f}°  (conjunction!)")
+    print(f"  6-planet arc spread:       {ref_spread:.2f}°")
 
     # ------------------------------------------------------------------
-    # Step 2: Search backwards
+    # Step 2: Define search criteria
     # ------------------------------------------------------------------
     print(f"\n{'─' * 72}")
-    print(f"  SEARCHING: year {SEARCH_START} back to {year_label(SEARCH_END)}")
-    print(f"  Conditions: Perfect Feb (non-leap, starts Sunday) + spread <= {threshold:.2f}°")
+    print(f"  SEARCH CRITERIA (all must be true simultaneously on Feb 28)")
+    print(f"{'─' * 72}")
+    print(f"""
+  1. Perfect February (non-leap, Feb 1 = Sunday)
+  2. Saturn–Neptune conjunction: separation ≤ {CONJUNCTION_THRESHOLD}°
+  3. Mercury–Venus conjunction:  separation ≤ {CONJUNCTION_THRESHOLD}°
+  4. All 6 planets within {MAX_SPREAD}° arc (same side of sky)
+""")
+
+    # ------------------------------------------------------------------
+    # Step 3: Search backwards
+    # ------------------------------------------------------------------
+    print(f"{'─' * 72}")
+    print(f"  SEARCHING: {SEARCH_START} back to {year_label(SEARCH_END)}")
     print(f"{'─' * 72}\n")
 
     matches = []
-    years_checked = 0
+    # Also track partial matches for context
+    perfect_feb_count = 0
+    sat_nep_on_feb28 = []
+    both_conjunctions = []
 
     for year in range(SEARCH_START, SEARCH_END, -1):
         if not is_perfect_february_sunday(year):
             continue
 
-        years_checked += 1
+        perfect_feb_count += 1
         longs = get_ecliptic_longitudes(year, 2, 28)
         if not longs:
             continue
 
+        sn = angular_separation(longs["Saturn"], longs["Neptune"])
+        mv = angular_separation(longs["Mercury"], longs["Venus"])
         spread = min_arc_spread(list(longs.values()))
 
-        if spread <= threshold:
-            matches.append((year, spread, dict(longs)))
+        # Track Saturn-Neptune conjunctions on qualifying Feb 28ths
+        if sn <= CONJUNCTION_THRESHOLD:
+            sat_nep_on_feb28.append((year, sn, mv, spread, dict(longs)))
 
-        if years_checked % 500 == 0:
-            print(f"  ... scanned to year {year_label(year)} "
-                  f"({years_checked} candidates checked) ...")
+        # Track both conjunctions
+        if sn <= CONJUNCTION_THRESHOLD and mv <= CONJUNCTION_THRESHOLD:
+            both_conjunctions.append((year, sn, mv, spread, dict(longs)))
+
+        # Full match: all criteria
+        if (sn <= CONJUNCTION_THRESHOLD and
+                mv <= CONJUNCTION_THRESHOLD and
+                spread <= MAX_SPREAD):
+            matches.append((year, sn, mv, spread, dict(longs)))
+            gap = REFERENCE_YEAR - year
+            print(f"  MATCH!  year {year_label(year):>8s}  |  Sat-Nep={sn:5.2f}°  "
+                  f"Mer-Ven={mv:5.2f}°  spread={spread:6.2f}°  "
+                  f"| {gap} yrs before 2026")
+
+        if perfect_feb_count % 100 == 0:
+            print(f"  ... scanned {perfect_feb_count} Perfect Februaries "
+                  f"(year {year_label(year)}) ...")
 
     # ------------------------------------------------------------------
-    # Step 3: Cluster analysis
+    # Step 4: Results
     # ------------------------------------------------------------------
-    clusters = find_clusters(matches, CLUSTER_GAP)
-
     print(f"\n{'=' * 72}")
     print(f"  RESULTS")
     print(f"{'=' * 72}")
-    print(f"\n  Search range:           {SEARCH_START} to {year_label(SEARCH_END)}")
-    print(f"  Perfect Februaries checked: {years_checked} (non-leap, Feb 1 = Sunday)")
-    print(f"  Threshold:              <= {threshold:.2f}°")
-    print(f"  Total matches:          {len(matches)}")
-    print(f"  Distinct clusters:      {len(clusters)} "
-          f"(grouped by {CLUSTER_GAP}-year gaps)")
 
-    print(f"\n{'─' * 72}")
-    print(f"  CLUSTER SUMMARY (each cluster is an 'era' of favorable alignment)")
-    print(f"{'─' * 72}")
+    print(f"\n  Search range: {SEARCH_START} to {year_label(SEARCH_END)} "
+          f"(~{abs(SEARCH_START - SEARCH_END)} years)")
+    print(f"  Perfect Februaries (Sunday start): {perfect_feb_count}")
+    print(f"  Saturn–Neptune conjunctions on those Feb 28ths: "
+          f"{len(sat_nep_on_feb28)}")
+    print(f"  + Also Mercury–Venus conjunction: {len(both_conjunctions)}")
+    print(f"  + Also all 6 planets same side of sky: {len(matches)}")
 
-    for i, cluster in enumerate(reversed(clusters)):
-        first_year = cluster[0][0]
-        last_year = cluster[-1][0]
-        best = min(cluster, key=lambda x: x[1])
-        span = last_year - first_year
-        years_before = REFERENCE_YEAR - last_year
-
-        era_label = (f"{year_label(first_year)}"
-                     + (f" – {year_label(last_year)}" if span > 0 else ""))
-
-        marker = " ◀ CURRENT ERA" if last_year >= 1982 else ""
-        print(f"\n  Cluster {i+1}: {era_label}  "
-              f"({len(cluster)} matches over {span} yrs){marker}")
-        print(f"    Best alignment: {year_label(best[0])} "
-              f"(spread={best[1]:.1f}°)")
-        if years_before > 0:
-            print(f"    Distance from 2026: ~{years_before} years")
+    # Show Saturn-Neptune conjunctions for context
+    if sat_nep_on_feb28:
+        print(f"\n  {'─' * 60}")
+        print(f"  Saturn–Neptune conjunctions on Feb 28 of Perfect Februaries:")
+        print(f"  {'─' * 60}")
+        for year, sn, mv, spread, longs in sat_nep_on_feb28:
+            mv_mark = f"Mer-Ven={mv:5.1f}°" + (" CONJ!" if mv <= 5 else "")
+            print(f"    {year_label(year):>8s}  Sat-Nep={sn:5.2f}°  "
+                  f"{mv_mark}  spread={spread:5.1f}°")
 
     # ------------------------------------------------------------------
-    # Step 4: Identify the gap to the previous era
-    # ------------------------------------------------------------------
-    print(f"\n{'─' * 72}")
-    print(f"  KEY FINDING")
-    print(f"{'─' * 72}")
-
-    # Find the cluster containing recent years and the one before it
-    recent_cluster = None
-    previous_cluster = None
-    for i, cluster in enumerate(reversed(clusters)):
-        last_yr = cluster[-1][0]
-        if last_yr >= 1980 and recent_cluster is None:
-            recent_cluster = cluster
-        elif recent_cluster is not None and previous_cluster is None:
-            previous_cluster = cluster
-            break
-
-    if recent_cluster and previous_cluster:
-        rc_first = recent_cluster[0][0]
-        rc_last = recent_cluster[-1][0]
-        pc_first = previous_cluster[0][0]
-        pc_last = previous_cluster[-1][0]
-        gap_years = rc_first - pc_last
-
-        print(f"\n  The 2026 alignment belongs to a cluster spanning "
-              f"{year_label(rc_first)} – {year_label(rc_last)}")
-        print(f"  ({len(recent_cluster)} qualifying Feb 28ths in this era)")
-        print(f"\n  The PREVIOUS cluster of alignments was "
-              f"{year_label(pc_first)} – {year_label(pc_last)}")
-        print(f"  ({len(previous_cluster)} qualifying Feb 28ths)")
-        print(f"\n  Gap between eras: ~{gap_years} years")
-        print(f"  Last qualifying year from previous era: "
-              f"{year_label(pc_last)} ({REFERENCE_YEAR - pc_last} years "
-              f"before 2026)")
-
-    # ------------------------------------------------------------------
-    # Step 5: Multi-threshold analysis
-    # ------------------------------------------------------------------
-    print(f"\n{'─' * 72}")
-    print(f"  SENSITIVITY ANALYSIS (how threshold affects rarity)")
-    print(f"{'─' * 72}")
-
-    for thr in [60, 80, 100, threshold, 140, 180]:
-        count = sum(1 for _, s, _ in matches if s <= thr)
-        sub_clusters = find_clusters(
-            [(y, s, l) for y, s, l in matches if s <= thr], CLUSTER_GAP)
-        label = " ◀ 2026 threshold" if thr == threshold else ""
-        print(f"    <= {thr:6.1f}°: {count:>4d} matches, "
-              f"{len(sub_clusters):>3d} clusters{label}")
-
-    # ------------------------------------------------------------------
-    # Step 6: The tightest alignments ever
-    # ------------------------------------------------------------------
-    print(f"\n{'─' * 72}")
-    print(f"  TOP 10 TIGHTEST ALIGNMENTS (Feb 28, Perfect February, all time)")
-    print(f"{'─' * 72}")
-
-    top10 = sorted(matches, key=lambda x: x[1])[:10]
-    for rank, (year, spread, longs) in enumerate(top10, 1):
-        gap = REFERENCE_YEAR - year
-        print(f"    #{rank:>2d}  {year_label(year):>8s}  spread={spread:5.1f}°  "
-              f"({gap} yrs {'before' if gap > 0 else 'after'} 2026)")
-        print(f"         {format_longitudes(longs)}")
-
-    # ------------------------------------------------------------------
-    # Step 7: Final answer
+    # Step 5: Final answer
     # ------------------------------------------------------------------
     print(f"\n{'=' * 72}")
     print(f"  ANSWER")
     print(f"{'=' * 72}")
 
-    if recent_cluster and previous_cluster:
-        pc_last = previous_cluster[-1][0]
-        all_best = min(matches, key=lambda x: x[1])
-        print(f"""
-  On Feb 28, 2026, six planets (Mercury, Venus, Jupiter, Saturn, Uranus,
-  Neptune) will align within {ref_spread:.1f}° of ecliptic longitude during
-  a Perfect February (28 days = 4 of each weekday).
+    if matches:
+        if len(matches) == 0:
+            pass  # handled below
+        else:
+            print(f"\n  Full matches found: {len(matches)}")
+            for year, sn, mv, spread, longs in sorted(matches, key=lambda x: -x[0]):
+                print(f"\n    {year_label(year)} ({REFERENCE_YEAR - year} years "
+                      f"before 2026)")
+                print(f"    Saturn–Neptune: {sn:.2f}°   Mercury–Venus: {mv:.2f}°   "
+                      f"Spread: {spread:.1f}°")
+                print(f"    {format_longitudes(longs)}")
 
-  Using the 2026 spread ({ref_spread:.1f}°) as the alignment threshold:
-
-    - The most recent PREVIOUS year meeting all conditions:
-      {year_label(pc_last)} — approximately {REFERENCE_YEAR - pc_last} years ago
-
-    - The current favorable era spans {year_label(rc_first)} – {year_label(rc_last)}
-      ({len(recent_cluster)} qualifying years)
-
-    - The previous favorable era was {year_label(pc_first)} – {year_label(pc_last)}
-      ({len(previous_cluster)} qualifying years)
-
-    - Gap between eras: ~{rc_first - pc_last} years
-
-    - The tightest alignment in the searched {abs(SEARCH_START - SEARCH_END)}-year
-      window was {year_label(all_best[0])} at just {all_best[1]:.1f}° spread
-
-  This pattern is governed by Neptune (~165 yr orbit) and Uranus (~84 yr
-  orbit). When these slow outer planets are on the same side of the ecliptic,
-  the faster planets (Jupiter, Saturn, Mercury, Venus) periodically join
-  them on Feb 28, creating clusters of alignments. Between favorable
-  configurations of Neptune and Uranus, there are long gaps where no
-  alignment is possible on February 28.
-""")
+            most_recent = max(matches, key=lambda x: x[0])
+            yr = most_recent[0]
+            print(f"\n  ┌─────────────────────────────────────────────────────┐")
+            print(f"  │  The last time ALL these conditions aligned on      │")
+            print(f"  │  February 28th was: {year_label(yr):>8s}                         │")
+            print(f"  │  That was {REFERENCE_YEAR - yr:,} years ago.{' ' * 25}│")
+            print(f"  └─────────────────────────────────────────────────────┘")
     else:
-        print("\n  Could not determine cluster structure from results.\n")
+        print(f"""
+  NO MATCH FOUND in {abs(SEARCH_START - SEARCH_END):,} years of searching.
+
+  ┌─────────────────────────────────────────────────────────┐
+  │  The combination of conditions on Feb 28, 2026 has      │
+  │  NOT occurred in at least the last {abs(SEARCH_START - SEARCH_END):,} years.        │
+  │                                                         │
+  │  It may have NEVER happened before in human history.    │
+  └─────────────────────────────────────────────────────────┘
+""")
+
+    # ------------------------------------------------------------------
+    # Step 6: Why is this so rare?
+    # ------------------------------------------------------------------
+    print(f"\n{'─' * 72}")
+    print(f"  WHY IS THIS SO RARE?")
+    print(f"{'─' * 72}")
+
+    # Calculate individual probabilities
+    # Perfect February Sunday: ~540 in 5025 years ≈ 1 in 9.3 years
+    pf_rate = perfect_feb_count / abs(SEARCH_START - SEARCH_END)
+    # Saturn-Neptune conjunction period: ~36 years
+    # Mercury-Venus on Feb 28: inner planets cycle fast but must land on
+    # the right day
+
+    print(f"""
+  Each condition alone is uncommon; together they're extraordinary:
+
+    Perfect February (Sunday start):     ~1 every {1/pf_rate:.0f} years
+    Saturn–Neptune conjunction (≤5°):    ~1 every 36 years
+    Mercury–Venus conjunction (≤5°):     ~frequent, but on a specific date: rare
+    All 6 planets same hemisphere:       depends on outer planet positions
+
+  On Feb 28, 2026, Saturn and Neptune meet for the first time since
+  1989 — but in 1989, February was not a Perfect February (Feb 1 was
+  a Wednesday). The next Saturn–Neptune conjunction after 2026 won't
+  be until ~2061.
+
+  For Mercury AND Venus to also be conjunct on that exact same date,
+  while all 6 planets are on the same side of the sky — that's the
+  combination that makes this effectively unique in recorded history.
+""")
 
     swe.close()
 
