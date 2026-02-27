@@ -50,24 +50,41 @@ CLUSTER_GAP = 30
 # Helpers
 # ---------------------------------------------------------------------------
 
-def is_perfect_february(year: int) -> bool:
-    """
-    A 'Perfect February' has exactly 4 of each day of the week.
-    4 x 7 = 28, so this requires February to have exactly 28 days → non-leap year.
-
-    Uses proleptic Gregorian calendar for years <= 0.
-    Astronomical year numbering: 1 BC = year 0, 2 BC = year -1, etc.
-    """
+def _is_leap(year: int) -> bool:
+    """Proleptic Gregorian leap year check (astronomical year numbering)."""
     if year <= 0:
         y = year
         if y % 4 != 0:
-            return True   # not leap → perfect
+            return False
         if y % 100 != 0:
-            return False  # leap
+            return True
         if y % 400 != 0:
-            return True   # not leap → perfect
-        return False       # leap
-    return not calendar.isleap(year)
+            return False
+        return True
+    return calendar.isleap(year)
+
+
+def feb1_weekday(year: int) -> int:
+    """
+    Return the day of week for Feb 1 of the given year.
+    0 = Monday, 6 = Sunday.
+    Uses Julian Day Number for all years (works for BC dates too).
+    """
+    jd = swe.julday(year, 2, 1, 12.0)
+    return int(jd + 1.5) % 7
+
+
+def is_perfect_february_sunday(year: int) -> bool:
+    """
+    A 'Perfect February' starting on Sunday:
+      1. Non-leap year (28 days = exactly 4 of each weekday)
+      2. February 1 falls on a Sunday
+
+    Like February 2026: Sun Feb 1 through Sat Feb 28.
+    """
+    if _is_leap(year):
+        return False
+    return feb1_weekday(year) == 6  # 6 = Sunday
 
 
 def get_ecliptic_longitudes(year: int, month: int, day: int) -> dict[str, float]:
@@ -156,7 +173,8 @@ def main():
     ref_spread = min_arc_spread(list(ref_longs.values()))
 
     dow = datetime.date(REFERENCE_YEAR, 2, 1).strftime('%A')
-    print(f"\n  Perfect February: Yes (non-leap, 28 days, Feb 1 = {dow})")
+    print(f"\n  Perfect February: Yes (non-leap, 28 days, Feb 1 = {dow} = Sunday)")
+    print(f"  (Sun Feb 1 through Sat Feb 28 — a complete 4-week block)")
     print(f"  Planets: {', '.join(PLANETS.keys())}")
     print(f"  Longitudes: {format_longitudes(ref_longs)}")
     print(f"  Minimum arc spread: {ref_spread:.2f}°")
@@ -170,14 +188,14 @@ def main():
     # ------------------------------------------------------------------
     print(f"\n{'─' * 72}")
     print(f"  SEARCHING: year {SEARCH_START} back to {year_label(SEARCH_END)}")
-    print(f"  Conditions: non-leap year + 6-planet spread <= {threshold:.2f}°")
+    print(f"  Conditions: Perfect Feb (non-leap, starts Sunday) + spread <= {threshold:.2f}°")
     print(f"{'─' * 72}\n")
 
     matches = []
     years_checked = 0
 
     for year in range(SEARCH_START, SEARCH_END, -1):
-        if not is_perfect_february(year):
+        if not is_perfect_february_sunday(year):
             continue
 
         years_checked += 1
@@ -203,7 +221,7 @@ def main():
     print(f"  RESULTS")
     print(f"{'=' * 72}")
     print(f"\n  Search range:           {SEARCH_START} to {year_label(SEARCH_END)}")
-    print(f"  Non-leap years checked: {years_checked}")
+    print(f"  Perfect Februaries checked: {years_checked} (non-leap, Feb 1 = Sunday)")
     print(f"  Threshold:              <= {threshold:.2f}°")
     print(f"  Total matches:          {len(matches)}")
     print(f"  Distinct clusters:      {len(clusters)} "
